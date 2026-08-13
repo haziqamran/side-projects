@@ -14,12 +14,21 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// TODO: Mount route modules
-// app.use('/api/upload', require('./routes/upload'));
-// app.use('/api/sales', require('./routes/sales'));
-// app.use('/api/products', require('./routes/products'));
-// app.use('/api/customers', require('./routes/customers'));
-// app.use('/api/recommendations', require('./routes/recommendations'));
+// Mount route modules
+const uploadRouter = require('./routes/upload');
+app.use('/api', uploadRouter);
+
+const salesRouter = require('./routes/sales');
+app.use('/api/sales', salesRouter);
+
+const productsRouter = require('./routes/products');
+app.use('/api/products', productsRouter);
+
+const customersRouter = require('./routes/customers');
+app.use('/api/customers', customersRouter);
+
+const recommendationsRouter = require('./routes/recommendations');
+app.use('/api/recommendations', recommendationsRouter);
 
 app.listen(PORT, () => {
   console.log(`BI Dashboard API running on http://localhost:${PORT}`);
