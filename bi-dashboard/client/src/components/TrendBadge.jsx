@@ -1,5 +1,5 @@
 /**
- * TrendBadge – compact inline badge indicating trend direction.
+ * TrendBadge – compact pill-shaped badge indicating trend direction.
  * Designed for use in table cells to show product performance trend.
  *
  * Props:
@@ -8,16 +8,16 @@
 
 const badgeStyles = {
   up: {
-    backgroundColor: '#D1FAE5',
-    color: '#065F46',
+    backgroundColor: '#ECFDF5',
+    color: '#059669',
   },
   down: {
-    backgroundColor: '#FEE2E2',
-    color: '#991B1B',
+    backgroundColor: '#FEF2F2',
+    color: '#DC2626',
   },
   stable: {
     backgroundColor: '#F3F4F6',
-    color: '#4B5563',
+    color: '#6B7280',
   },
 };
 
@@ -37,7 +37,7 @@ const baseStyle = {
   display: 'inline-flex',
   alignItems: 'center',
   gap: '0.25rem',
-  padding: '0.2rem 0.5rem',
+  padding: '0.2rem 0.6rem',
   borderRadius: '9999px',
   fontSize: '0.75rem',
   fontWeight: 600,

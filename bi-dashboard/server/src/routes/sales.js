@@ -106,4 +106,24 @@ router.get('/trend', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/sales/date-range
+ * Returns the min and max transaction dates in the database.
+ * Used by the frontend to set intelligent default date filters.
+ */
+router.get('/date-range', async (req, res) => {
+  try {
+    const { getPool } = require('../db');
+    const pool = getPool();
+    const result = await pool.query(
+      'SELECT MIN(date)::text AS "minDate", MAX(date)::text AS "maxDate" FROM transactions'
+    );
+    const row = result.rows[0];
+    res.json({ minDate: row.minDate, maxDate: row.maxDate });
+  } catch (err) {
+    console.error('Error in GET /api/sales/date-range:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 module.exports = router;

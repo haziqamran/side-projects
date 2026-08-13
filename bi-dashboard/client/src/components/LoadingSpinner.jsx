@@ -19,7 +19,7 @@ const styles = {
     width: '36px',
     height: '36px',
     border: '3px solid #E5E7EB',
-    borderTopColor: '#3B82F6',
+    borderTopColor: '#4F46E5',
     borderRadius: '50%',
     animation: 'spin 0.8s linear infinite',
   },
@@ -31,17 +31,11 @@ const styles = {
   },
 };
 
-// Inject keyframes once via a <style> tag
-const keyframes = `@keyframes spin { to { transform: rotate(360deg); } }`;
-
 export default function LoadingSpinner({ text = 'Loading...' }) {
   return (
-    <>
-      <style>{keyframes}</style>
-      <div style={styles.container} role="status" aria-live="polite">
-        <div style={styles.spinner} />
-        {text && <p style={styles.text}>{text}</p>}
-      </div>
-    </>
+    <div style={styles.container} role="status" aria-live="polite">
+      <div style={styles.spinner} />
+      {text && <p style={styles.text}>{text}</p>}
+    </div>
   );
 }

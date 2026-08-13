@@ -9,8 +9,6 @@ import LoadingSpinner from '../components/LoadingSpinner';
  *
  * Connects to FilterContext for date range and category filters.
  * Refetches data automatically when filters change.
- *
- * Validates: Requirements 9.1, 9.2, 9.3, 9.4, 9.5, 9.6
  */
 function CustomerInsights() {
   const { filters } = useFilters();
@@ -67,29 +65,29 @@ function CustomerInsights() {
       <h1>Customer Insights</h1>
 
       <div className="customer-insights-grid">
-        {/* Repeat Rate Card */}
+        {/* Repeat Rate Card — single horizontal stacked bar */}
         <div className="insight-card">
           <h2 className="insight-card-title">Repeat vs One-Time Customers</h2>
           <div className="repeat-rate-display">
-            <div className="rate-item">
-              <span className="rate-label">Repeat Customers</span>
-              <div className="rate-bar-container">
-                <div
-                  className="rate-bar rate-bar--repeat"
-                  style={{ width: `${repeatRate.repeat}%` }}
-                />
-              </div>
-              <span className="rate-value">{repeatRate.repeat}%</span>
+            <div className="rate-bar-container" style={{ height: '20px', borderRadius: '10px' }}>
+              <div
+                className="rate-bar rate-bar--repeat"
+                style={{ width: `${repeatRate.repeat}%`, height: '100%', display: 'inline-block', borderRadius: '10px 0 0 10px' }}
+              />
+              <div
+                className="rate-bar rate-bar--onetime"
+                style={{ width: `${repeatRate.oneTime}%`, height: '100%', display: 'inline-block', borderRadius: '0 10px 10px 0' }}
+              />
             </div>
-            <div className="rate-item">
-              <span className="rate-label">One-Time Customers</span>
-              <div className="rate-bar-container">
-                <div
-                  className="rate-bar rate-bar--onetime"
-                  style={{ width: `${repeatRate.oneTime}%` }}
-                />
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#4F46E5', display: 'inline-block' }} />
+                <span className="rate-label" style={{ minWidth: 'auto' }}>Repeat {repeatRate.repeat}%</span>
               </div>
-              <span className="rate-value">{repeatRate.oneTime}%</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#9CA3AF', display: 'inline-block' }} />
+                <span className="rate-label" style={{ minWidth: 'auto' }}>One-Time {repeatRate.oneTime}%</span>
+              </div>
             </div>
           </div>
         </div>

@@ -7,8 +7,8 @@ const styles = {
   panel: {
     background: '#FFFFFF',
     border: '1px solid #E5E7EB',
-    borderRadius: '0.75rem',
-    padding: '1.5rem',
+    borderRadius: '12px',
+    padding: '24px',
     marginTop: '1.5rem',
   },
   list: {
@@ -23,18 +23,18 @@ const styles = {
     display: 'flex',
     alignItems: 'flex-start',
     gap: '0.75rem',
-    padding: '0.75rem 1rem',
-    borderLeft: '3px solid #3B82F6',
-    borderRadius: '0.25rem',
-    background: '#F9FAFB',
+    padding: '0.875rem 1rem',
+    borderLeft: '3px solid #4F46E5',
+    borderRadius: '4px',
+    background: '#FFFFFF',
   },
   icon: {
-    fontSize: '1.25rem',
+    fontSize: '1rem',
     lineHeight: '1.5',
     flexShrink: 0,
   },
   text: {
-    fontSize: '0.9rem',
+    fontSize: '0.875rem',
     color: '#374151',
     lineHeight: '1.5',
     margin: 0,
@@ -84,12 +84,13 @@ export default function RecommendationPanel() {
           style={{
             marginTop: '0.75rem',
             padding: '0.5rem 1rem',
-            background: '#3B82F6',
+            background: '#4F46E5',
             color: '#fff',
             border: 'none',
-            borderRadius: '0.375rem',
+            borderRadius: '6px',
             cursor: 'pointer',
             fontSize: '0.875rem',
+            fontWeight: 600,
           }}
         >
           Retry

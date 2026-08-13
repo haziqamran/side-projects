@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Area, AreaChart,
   BarChart, Bar, PieChart, Pie, Cell, Legend,
 } from 'recharts';
 import { useFilters } from '../context/FilterContext';
@@ -8,7 +8,7 @@ import { getSalesOverview, getSalesTrend, getProductTop, getProductCategories } 
 import MetricCard from '../components/MetricCard';
 import LoadingSpinner from '../components/LoadingSpinner';
 
-const PIE_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
+const CHART_COLORS = ['#4F46E5', '#06B6D4', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
 
 /**
  * SalesOverview page – displays aggregate sales metrics, revenue trend line chart,
@@ -136,7 +136,7 @@ export default function SalesOverview() {
 
       {/* Charts Grid */}
       <div className="charts-grid">
-        {/* Revenue Line Chart */}
+        {/* Revenue Area Chart */}
         <div className="chart-card">
           <div className="chart-header">
             <h2 className="chart-title">Revenue Trend</h2>
@@ -144,28 +144,36 @@ export default function SalesOverview() {
           </div>
           <div className="chart-body">
             <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={trendData} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+              <AreaChart data={trendData} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
+                <defs>
+                  <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#4F46E5" stopOpacity={0.15} />
+                    <stop offset="95%" stopColor="#4F46E5" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
                 <XAxis
                   dataKey="period"
-                  tick={{ fontSize: 12, fill: '#6B7280' }}
+                  tick={{ fontSize: 12, fill: '#9CA3AF' }}
                   tickLine={false}
+                  axisLine={{ stroke: '#E5E7EB' }}
                 />
                 <YAxis
-                  tick={{ fontSize: 12, fill: '#6B7280' }}
+                  tick={{ fontSize: 12, fill: '#9CA3AF' }}
                   tickLine={false}
+                  axisLine={false}
                   tickFormatter={(v) => `$${v.toLocaleString()}`}
                 />
                 <Tooltip content={<RevenueTrendTooltip />} />
-                <Line
+                <Area
                   type="monotone"
                   dataKey="revenue"
-                  stroke="#3B82F6"
+                  stroke="#4F46E5"
                   strokeWidth={2}
-                  dot={{ r: 3, fill: '#3B82F6' }}
-                  activeDot={{ r: 5 }}
+                  fill="url(#revenueGradient)"
+                  dot={false}
+                  activeDot={{ r: 4, fill: '#4F46E5', strokeWidth: 0 }}
                 />
-              </LineChart>
+              </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
@@ -182,22 +190,31 @@ export default function SalesOverview() {
                 layout="vertical"
                 margin={{ top: 5, right: 20, bottom: 5, left: 80 }}
               >
-                <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" horizontal={false} />
                 <XAxis
                   type="number"
-                  tick={{ fontSize: 12, fill: '#6B7280' }}
+                  tick={{ fontSize: 12, fill: '#9CA3AF' }}
+                  tickLine={false}
+                  axisLine={{ stroke: '#E5E7EB' }}
                   tickFormatter={(v) => `$${v.toLocaleString()}`}
                 />
                 <YAxis
                   type="category"
                   dataKey="product"
-                  tick={{ fontSize: 12, fill: '#6B7280' }}
+                  tick={{ fontSize: 12, fill: '#9CA3AF' }}
+                  tickLine={false}
+                  axisLine={false}
                   width={75}
                 />
                 <Tooltip
                   formatter={(value) => [`$${Number(value).toLocaleString()}`, 'Revenue']}
+                  contentStyle={{
+                    background: '#FFFFFF',
+                    border: '1px solid #E5E7EB',
+                    borderRadius: '6px',
+                    boxShadow: 'none',
+                  }}
                 />
-                <Bar dataKey="revenue" fill="#3B82F6" radius={[0, 4, 4, 0]} />
+                <Bar dataKey="revenue" fill="#4F46E5" radius={[0, 6, 6, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -215,8 +232,8 @@ export default function SalesOverview() {
                   data={categoryChartData}
                   cx="50%"
                   cy="50%"
-                  innerRadius={60}
-                  outerRadius={100}
+                  innerRadius="70%"
+                  outerRadius="90%"
                   dataKey="value"
                   nameKey="name"
                   paddingAngle={2}
@@ -224,12 +241,18 @@ export default function SalesOverview() {
                   {categoryChartData.map((entry, index) => (
                     <Cell
                       key={entry.name}
-                      fill={PIE_COLORS[index % PIE_COLORS.length]}
+                      fill={CHART_COLORS[index % CHART_COLORS.length]}
                     />
                   ))}
                 </Pie>
                 <Tooltip
                   formatter={(value, name) => [`${value.toFixed(1)}%`, name]}
+                  contentStyle={{
+                    background: '#FFFFFF',
+                    border: '1px solid #E5E7EB',
+                    borderRadius: '6px',
+                    boxShadow: 'none',
+                  }}
                 />
                 <Legend
                   formatter={(value) => {
@@ -248,18 +271,15 @@ export default function SalesOverview() {
 
 /**
  * Prepare category data for the donut chart.
- * Converts API response into { name, value (percentage) } array.
  */
 function prepareCategoryData(data) {
   if (!data) return [];
-  // Handle array format: [{ category, revenue, percentage }]
   if (Array.isArray(data)) {
     return data.map(item => ({
       name: item.category || item.name,
       value: item.percentage != null ? item.percentage : item.value || 0,
     }));
   }
-  // Handle object format: { categories: [...] }
   if (data.categories && Array.isArray(data.categories)) {
     return data.categories.map(item => ({
       name: item.category || item.name,
@@ -270,8 +290,7 @@ function prepareCategoryData(data) {
 }
 
 /**
- * Custom tooltip for the revenue trend line chart.
- * Displays period label and exact revenue value.
+ * Custom tooltip for the revenue trend area chart.
  */
 function RevenueTrendTooltip({ active, payload, label }) {
   if (!active || !payload || !payload.length) return null;
@@ -290,7 +309,6 @@ function RevenueTrendTooltip({ active, payload, label }) {
 
 /**
  * GranularityToggle – button group to switch between daily/weekly/monthly.
- * Updates the global FilterContext granularity.
  */
 function GranularityToggle({ value, onChange }) {
   const options = ['daily', 'weekly', 'monthly'];

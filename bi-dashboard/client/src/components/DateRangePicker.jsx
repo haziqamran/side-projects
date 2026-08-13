@@ -28,12 +28,10 @@ function DateRangePicker() {
           );
         }
       } catch {
-        // Don't show banner on network errors — pages handle that
         if (mountedRef.current) setNoData(false);
       }
     }
 
-    // Debounce the check to avoid excessive API calls while user is adjusting dates
     timer = setTimeout(checkData, 300);
 
     return () => {
@@ -53,23 +51,25 @@ function DateRangePicker() {
   return (
     <div className="date-range-picker">
       <div className="filter-field">
-        <label htmlFor="start-date">From</label>
+        <label htmlFor="start-date">Start date</label>
         <input
           type="date"
           id="start-date"
           value={filters.dateRange.start}
           onChange={handleStartChange}
           max={filters.dateRange.end}
+          placeholder="Start date"
         />
       </div>
       <div className="filter-field">
-        <label htmlFor="end-date">To</label>
+        <label htmlFor="end-date">End date</label>
         <input
           type="date"
           id="end-date"
           value={filters.dateRange.end}
           onChange={handleEndChange}
           min={filters.dateRange.start}
+          placeholder="End date"
         />
       </div>
       {noData && (

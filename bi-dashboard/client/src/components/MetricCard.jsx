@@ -1,7 +1,6 @@
 /**
  * MetricCard – displays a single KPI with title, formatted value, and
- * period-over-period change percentage. Change is color-coded:
- * green for positive, red for negative, gray for null/N/A.
+ * period-over-period change percentage.
  *
  * Props:
  *  - title: string – label displayed above the value
@@ -13,45 +12,50 @@
 
 const styles = {
   card: {
-    background: '#ffffff',
+    background: '#FFFFFF',
     borderRadius: '12px',
-    border: '1px solid #e2e8f0',
-    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04)',
-    padding: '1.5rem',
+    border: '1px solid #E5E7EB',
+    padding: '24px',
     minWidth: '200px',
     flex: '1 1 0',
   },
   title: {
-    fontSize: '0.85rem',
+    fontSize: '0.75rem',
     fontWeight: 500,
     color: '#6B7280',
     textTransform: 'uppercase',
-    letterSpacing: '0.025em',
-    marginBottom: '0.5rem',
+    letterSpacing: '0.05em',
+    marginBottom: '0.75rem',
   },
   value: {
-    fontSize: '1.75rem',
+    fontSize: '2rem',
     fontWeight: 700,
-    color: '#1a202c',
+    color: '#111827',
     marginBottom: '0.5rem',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif',
   },
   changeRow: {
     display: 'flex',
     alignItems: 'center',
-    gap: '0.25rem',
-    fontSize: '0.85rem',
+    gap: '0.375rem',
+    fontSize: '0.8rem',
     fontWeight: 500,
+  },
+  dot: {
+    width: '6px',
+    height: '6px',
+    borderRadius: '50%',
+    display: 'inline-block',
+    flexShrink: 0,
   },
 };
 
 /**
  * Format a numeric value with locale formatting (commas, decimals).
- * Returns the value as-is if it's already a string.
  */
 function formatValue(value) {
   if (value == null) return '—';
   if (typeof value === 'string') return value;
-  // Format numbers with up to 2 decimal places
   return value.toLocaleString(undefined, {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
@@ -59,28 +63,17 @@ function formatValue(value) {
 }
 
 /**
- * Determine the color for the change indicator based on direction.
+ * Get the color for the change indicator.
  */
 function getChangeColor(change) {
-  if (change == null) return '#6B7280'; // gray
-  if (change > 0) return '#10B981';     // green
-  if (change < 0) return '#EF4444';     // red
-  return '#6B7280';                     // gray for zero
-}
-
-/**
- * Get the arrow character for the change direction.
- */
-function getChangeArrow(change) {
-  if (change == null) return '';
-  if (change > 0) return '↑';
-  if (change < 0) return '↓';
-  return '–';
+  if (change == null) return '#9CA3AF';
+  if (change > 0) return '#059669';
+  if (change < 0) return '#DC2626';
+  return '#9CA3AF';
 }
 
 export default function MetricCard({ title, value, change, prefix = '', suffix = '' }) {
   const changeColor = getChangeColor(change);
-  const arrow = getChangeArrow(change);
   const changeText =
     change == null
       ? 'N/A'
@@ -92,10 +85,10 @@ export default function MetricCard({ title, value, change, prefix = '', suffix =
       <div style={styles.value}>
         {prefix}{formatValue(value)}{suffix}
       </div>
-      <div style={{ ...styles.changeRow, color: changeColor }}>
-        {arrow && <span>{arrow}</span>}
-        <span>{changeText}</span>
-        <span style={{ color: '#9CA3AF', fontWeight: 400, marginLeft: '0.25rem' }}>
+      <div style={styles.changeRow}>
+        <span style={{ ...styles.dot, backgroundColor: changeColor }} />
+        <span style={{ color: changeColor }}>{changeText}</span>
+        <span style={{ color: '#9CA3AF', fontWeight: 400 }}>
           vs prev period
         </span>
       </div>
