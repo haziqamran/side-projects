@@ -54,7 +54,7 @@ function validateDateRange(start, end) {
  *
  * Returns current/previous period metrics and percentage changes.
  */
-router.get('/overview', (req, res) => {
+router.get('/overview', async (req, res) => {
   try {
     const { start, end, categories: categoriesParam } = req.query;
 
@@ -64,7 +64,7 @@ router.get('/overview', (req, res) => {
     }
 
     const categories = parseCategories(categoriesParam);
-    const result = salesService.getOverview(start, end, categories);
+    const result = await salesService.getOverview(start, end, categories);
 
     res.json(result);
   } catch (err) {
@@ -84,7 +84,7 @@ router.get('/overview', (req, res) => {
  *
  * Returns time-series revenue data grouped by the specified granularity.
  */
-router.get('/trend', (req, res) => {
+router.get('/trend', async (req, res) => {
   try {
     const { start, end, categories: categoriesParam, granularity } = req.query;
 
@@ -97,7 +97,7 @@ router.get('/trend', (req, res) => {
     const validGranularities = ['daily', 'weekly', 'monthly'];
     const resolvedGranularity = validGranularities.includes(granularity) ? granularity : 'daily';
 
-    const result = salesService.getTrend(start, end, categories, resolvedGranularity);
+    const result = await salesService.getTrend(start, end, categories, resolvedGranularity);
 
     res.json(result);
   } catch (err) {

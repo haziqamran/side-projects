@@ -11,7 +11,7 @@
  */
 
 const { parse } = require('csv-parse/sync');
-const { getDb } = require('../db');
+const { getPool } = require('../db');
 
 // Maximum file size: 10 MB in bytes
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -48,11 +48,9 @@ function normalizeColumnName(header) {
  * @returns {boolean} True if valid YYYY-MM-DD date
  */
 function isValidDate(value) {
-  // Check format strictly: exactly YYYY-MM-DD
   const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
   if (!dateRegex.test(value)) return false;
 
-  // Verify it's a real calendar date (e.g., reject 2024-02-30)
   const [year, month, day] = value.split('-').map(Number);
   const dateObj = new Date(year, month - 1, day);
   return (
@@ -75,14 +73,11 @@ function isPositiveNumber(value) {
 
 /**
  * Validates a single row of transaction data.
- * A row is invalid if any required field is empty, quantity is not a positive number,
- * unit_price is not a positive number, or date does not match YYYY-MM-DD format.
  *
  * @param {object} row - Object with normalized column keys
  * @returns {boolean} True if the row passes all validations
  */
 function isValidRow(row) {
-  // Check all required fields are non-empty (after trimming)
   for (const col of REQUIRED_COLUMNS) {
     const value = row[col];
     if (value === undefined || value === null || String(value).trim() === '') {
@@ -90,17 +85,14 @@ function isValidRow(row) {
     }
   }
 
-  // Validate date format: YYYY-MM-DD
   if (!isValidDate(String(row.date).trim())) {
     return false;
   }
 
-  // Validate quantity: must be a positive number
   if (!isPositiveNumber(String(row.quantity).trim())) {
     return false;
   }
 
-  // Validate unit_price: must be a positive number
   if (!isPositiveNumber(String(row.unit_price).trim())) {
     return false;
   }
@@ -115,10 +107,10 @@ function isValidRow(row) {
  * @param {Buffer} fileBuffer - Raw file content
  * @param {string} originalName - Original filename (used for type checking)
  * @param {number} fileSize - File size in bytes
- * @returns {{ imported: number, skipped: number, message: string }}
+ * @returns {Promise<{ imported: number, skipped: number, message: string }>}
  * @throws {Error} For file-level failures with descriptive messages
  */
-function processUpload(fileBuffer, originalName, fileSize) {
+async function processUpload(fileBuffer, originalName, fileSize) {
   // 1. File type validation — only CSV files accepted
   if (!originalName || !originalName.toLowerCase().endsWith('.csv')) {
     throw new Error('Only CSV files are accepted');
@@ -144,15 +136,12 @@ function processUpload(fileBuffer, originalName, fileSize) {
     throw new Error('Failed to parse CSV file: ' + err.message);
   }
 
-  // 4. Column presence validation — check that all required columns exist
+  // 4. Column presence validation
   if (records.length === 0) {
-    // If there are no records, either the file has no header or no data rows.
-    // Try to parse just the header to check columns.
     const lines = content.split(/\r?\n/).filter((line) => line.trim() !== '');
     if (lines.length === 0) {
       throw new Error('File contains no transaction data');
     }
-    // Has header but no data rows
     const headers = lines[0].split(',').map(normalizeColumnName);
     const missingCols = REQUIRED_COLUMNS.filter(
       (col) => !headers.includes(col)
@@ -160,11 +149,9 @@ function processUpload(fileBuffer, originalName, fileSize) {
     if (missingCols.length > 0) {
       throw new Error('Missing required columns: ' + missingCols.join(', '));
     }
-    // Header is valid but no data rows
     throw new Error('File contains no transaction data');
   }
 
-  // Check columns from the first record's keys
   const presentColumns = Object.keys(records[0]);
   const missingColumns = REQUIRED_COLUMNS.filter(
     (col) => !presentColumns.includes(col)
@@ -173,38 +160,44 @@ function processUpload(fileBuffer, originalName, fileSize) {
     throw new Error('Missing required columns: ' + missingColumns.join(', '));
   }
 
-  // 5. Row-level validation and batch insert
-  const db = getDb();
-  const insertStmt = db.prepare(`
-    INSERT INTO transactions (date, product, category, quantity, unit_price, customer_id, payment_method)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `);
+  // 5. Row-level validation and batch insert using pg transaction
+  const pool = getPool();
+  const client = await pool.connect();
 
   let imported = 0;
   let skipped = 0;
 
-  // Use a transaction for batch insert — all-or-nothing for performance,
-  // but we only insert valid rows (invalid ones are silently skipped).
-  const insertAll = db.transaction((rows) => {
-    for (const row of rows) {
+  try {
+    await client.query('BEGIN');
+
+    for (const row of records) {
       if (isValidRow(row)) {
-        insertStmt.run(
-          String(row.date).trim(),
-          String(row.product).trim(),
-          String(row.category).trim(),
-          Number(String(row.quantity).trim()),
-          Number(String(row.unit_price).trim()),
-          String(row.customer_id).trim(),
-          String(row.payment_method).trim()
+        await client.query(
+          `INSERT INTO transactions (date, product, category, quantity, unit_price, customer_id, payment_method)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [
+            String(row.date).trim(),
+            String(row.product).trim(),
+            String(row.category).trim(),
+            Number(String(row.quantity).trim()),
+            Number(String(row.unit_price).trim()),
+            String(row.customer_id).trim(),
+            String(row.payment_method).trim()
+          ]
         );
         imported++;
       } else {
         skipped++;
       }
     }
-  });
 
-  insertAll(records);
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
 
   // 6. Build result summary
   const message = `${imported} valid rows imported, ${skipped} rows skipped due to invalid data`;

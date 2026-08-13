@@ -3,7 +3,7 @@
  * Wraps the seed data generation logic so it can be called from the API route.
  * Produces ~5,500 realistic transaction records spanning 6 months.
  */
-const { getDb } = require('./db');
+const { getPool } = require('./db');
 
 // Seed data configuration
 const categories = {
@@ -18,7 +18,6 @@ const paymentMethods = ['Cash', 'Credit Card', 'Debit Card', 'E-Wallet'];
 
 /**
  * Generates a random date (YYYY-MM-DD) between start and end dates (inclusive).
- * Used to distribute seed transactions across the 6-month date range.
  *
  * @param {Date} start - Range start (inclusive)
  * @param {Date} end - Range end (inclusive)
@@ -31,12 +30,12 @@ function randomDate(start, end) {
 
 /**
  * Generates and inserts seed data into the database.
- * Uses the shared getDb() connection rather than creating a new one.
+ * Uses the shared pool from db.js with a transaction for batch insert.
  *
- * @returns {{ count: number }} Number of records inserted
+ * @returns {Promise<{ count: number }>} Number of records inserted
  */
-function seedDatabase() {
-  const db = getDb();
+async function seedDatabase() {
+  const pool = getPool();
 
   const startDate = new Date('2026-01-01');
   const endDate = new Date('2026-06-30');
@@ -76,18 +75,25 @@ function seedDatabase() {
   }
 
   // Batch insert using a transaction
-  const insert = db.prepare(`
-    INSERT INTO transactions (date, product, category, quantity, unit_price, customer_id, payment_method)
-    VALUES (@date, @product, @category, @quantity, @unit_price, @customer_id, @payment_method)
-  `);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
 
-  const insertMany = db.transaction((rows) => {
-    for (const row of rows) {
-      insert.run(row);
+    for (const row of records) {
+      await client.query(
+        `INSERT INTO transactions (date, product, category, quantity, unit_price, customer_id, payment_method)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [row.date, row.product, row.category, row.quantity, row.unit_price, row.customer_id, row.payment_method]
+      );
     }
-  });
 
-  insertMany(records);
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
 
   return { count: records.length };
 }

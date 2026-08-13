@@ -53,7 +53,7 @@ function validateDateRange(start, end) {
  *
  * Returns repeat rate, top 10 customers, and customer segments.
  */
-router.get('/insights', (req, res) => {
+router.get('/insights', async (req, res) => {
   try {
     const { start, end, categories: categoriesParam } = req.query;
 
@@ -63,7 +63,7 @@ router.get('/insights', (req, res) => {
     }
 
     const categories = parseCategories(categoriesParam);
-    const result = customerService.getInsights(start, end, categories);
+    const result = await customerService.getInsights(start, end, categories);
 
     res.json(result);
   } catch (err) {

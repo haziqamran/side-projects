@@ -9,7 +9,7 @@ const express = require('express');
 const multer = require('multer');
 const uploadService = require('../services/uploadService');
 const { transactionCount } = require('../models/queries');
-const { getDb } = require('../db');
+const { getPool } = require('../db');
 const { seedDatabase } = require('../seedDatabase');
 
 const router = express.Router();
@@ -26,7 +26,7 @@ const upload = multer({
  * Wraps multer to catch its file-size errors before they bubble up.
  */
 router.post('/upload', (req, res) => {
-  upload.single('file')(req, res, (multerErr) => {
+  upload.single('file')(req, res, async (multerErr) => {
     // Handle multer errors (e.g., file too large)
     if (multerErr) {
       if (multerErr instanceof multer.MulterError && multerErr.code === 'LIMIT_FILE_SIZE') {
@@ -41,7 +41,7 @@ router.post('/upload', (req, res) => {
       }
 
       const { buffer, originalname, size } = req.file;
-      const result = uploadService.processUpload(buffer, originalname, size);
+      const result = await uploadService.processUpload(buffer, originalname, size);
 
       return res.status(200).json({
         success: true,
@@ -76,12 +76,12 @@ router.post('/upload', (req, res) => {
  * GET /api/upload/status
  * Returns whether the database has any transaction data.
  */
-router.get('/upload/status', (req, res) => {
+router.get('/upload/status', async (req, res) => {
   try {
-    const db = getDb();
+    const pool = getPool();
     const { sql, params } = transactionCount();
-    const row = db.prepare(sql).get(...params);
-    const hasData = row.count > 0;
+    const result = await pool.query(sql, params);
+    const hasData = parseInt(result.rows[0].count, 10) > 0;
 
     return res.status(200).json({ hasData });
   } catch (err) {
@@ -93,9 +93,9 @@ router.get('/upload/status', (req, res) => {
  * POST /api/seed
  * Triggers seed data generation (~5,500 sample transaction records).
  */
-router.post('/seed', (req, res) => {
+router.post('/seed', async (req, res) => {
   try {
-    const result = seedDatabase();
+    const result = await seedDatabase();
     return res.status(200).json({
       success: true,
       message: `Seeded ${result.count} transaction records`

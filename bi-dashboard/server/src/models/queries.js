@@ -1,9 +1,11 @@
 /**
- * Reusable SQL Query Builder Module
+ * Reusable SQL Query Builder Module (PostgreSQL / Neon)
  *
  * Provides parameterized query functions for the BI Dashboard.
- * All functions return prepared-statement-compatible objects: { sql, params }
- * designed for use with better-sqlite3's synchronous API.
+ * All functions return objects: { sql, params }
+ * designed for use with pg Pool's query(sql, params) API.
+ *
+ * PostgreSQL uses numbered placeholders ($1, $2, $3, ...) instead of ?.
  *
  * The transactions table schema:
  *   id, date, product, category, quantity, unit_price, customer_id, payment_method, created_at
@@ -17,31 +19,35 @@
 
 /**
  * Builds a WHERE clause for date-range and optional category filtering.
- * Returns the clause string (including "WHERE") and an array of bound params.
+ * Returns the clause string (including "WHERE"), an array of bound params,
+ * and the next available parameter index.
  *
  * @param {object} filters
  * @param {string} filters.start - Start date inclusive (YYYY-MM-DD)
  * @param {string} filters.end   - End date inclusive (YYYY-MM-DD)
  * @param {string[]} [filters.categories] - Optional array of category names; empty/undefined means all
- * @returns {{ clause: string, params: any[] }}
+ * @param {number} [startIndex=1] - Starting parameter index for numbered placeholders
+ * @returns {{ clause: string, params: any[], nextIndex: number }}
  */
-function buildWhereClause(filters) {
+function buildWhereClause(filters, startIndex = 1) {
   const conditions = [];
   const params = [];
+  let idx = startIndex;
 
   // Date range is always required for dashboard queries
-  conditions.push('date >= ? AND date <= ?');
+  conditions.push(`date >= $${idx} AND date <= $${idx + 1}`);
   params.push(filters.start, filters.end);
+  idx += 2;
 
   // Category filter: only applied when a non-empty array is provided
   if (filters.categories && filters.categories.length > 0) {
-    const placeholders = filters.categories.map(() => '?').join(', ');
+    const placeholders = filters.categories.map(() => `$${idx++}`).join(', ');
     conditions.push(`category IN (${placeholders})`);
     params.push(...filters.categories);
   }
 
   const clause = 'WHERE ' + conditions.join(' AND ');
-  return { clause, params };
+  return { clause, params, nextIndex: idx };
 }
 
 /**
@@ -50,11 +56,12 @@ function buildWhereClause(filters) {
  * before `start`.
  *
  * @param {object} filters - Same shape as buildWhereClause input
- * @returns {{ clause: string, params: any[] }}
+ * @param {number} [startIndex=1] - Starting parameter index
+ * @returns {{ clause: string, params: any[], nextIndex: number }}
  */
-function buildPreviousPeriodWhereClause(filters) {
+function buildPreviousPeriodWhereClause(filters, startIndex = 1) {
   const { prevStart, prevEnd } = calculatePreviousPeriod(filters.start, filters.end);
-  return buildWhereClause({ ...filters, start: prevStart, end: prevEnd });
+  return buildWhereClause({ ...filters, start: prevStart, end: prevEnd }, startIndex);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -128,8 +135,8 @@ function revenueAggregation(filters) {
 
   const sql = `
     SELECT
-      COALESCE(SUM(quantity * unit_price), 0) AS totalRevenue,
-      COUNT(*) AS totalOrders
+      COALESCE(SUM(quantity * unit_price), 0) AS "totalRevenue",
+      COUNT(*) AS "totalOrders"
     FROM transactions
     ${clause}
   `;
@@ -141,10 +148,10 @@ function revenueAggregation(filters) {
  * Returns a query for revenue aggregated by time period (daily, weekly, monthly).
  * Used for the revenue trend line chart.
  *
- * Granularity grouping:
- *   - daily:   GROUP BY date
- *   - weekly:  GROUP BY strftime('%Y-W%W', date)  (ISO week starting Monday)
- *   - monthly: GROUP BY strftime('%Y-%m', date)
+ * Granularity grouping (PostgreSQL):
+ *   - daily:   GROUP BY date (cast to text)
+ *   - weekly:  GROUP BY TO_CHAR(date, 'IYYY-"W"IW')  (ISO week)
+ *   - monthly: GROUP BY TO_CHAR(date, 'YYYY-MM')
  *
  * @param {object} filters - { start, end, categories? }
  * @param {'daily'|'weekly'|'monthly'} granularity
@@ -157,15 +164,14 @@ function revenueTrend(filters, granularity = 'daily') {
   let periodExpr;
   switch (granularity) {
     case 'weekly':
-      // strftime %W gives week number (Monday start); combine with year for uniqueness
-      periodExpr = "strftime('%Y-W%W', date)";
+      periodExpr = "TO_CHAR(date, 'IYYY-\"W\"IW')";
       break;
     case 'monthly':
-      periodExpr = "strftime('%Y-%m', date)";
+      periodExpr = "TO_CHAR(date, 'YYYY-MM')";
       break;
     case 'daily':
     default:
-      periodExpr = 'date';
+      periodExpr = "TO_CHAR(date, 'YYYY-MM-DD')";
       break;
   }
 
@@ -201,12 +207,12 @@ function productPerformance(filters) {
     SELECT
       product,
       category,
-      COALESCE(SUM(quantity * unit_price), 0) AS totalRevenue,
-      COALESCE(SUM(quantity), 0) AS unitsSold
+      COALESCE(SUM(quantity * unit_price), 0) AS "totalRevenue",
+      COALESCE(SUM(quantity), 0) AS "unitsSold"
     FROM transactions
     ${clause}
     GROUP BY product, category
-    ORDER BY totalRevenue DESC
+    ORDER BY "totalRevenue" DESC
   `;
 
   return { sql, params };
@@ -220,19 +226,19 @@ function productPerformance(filters) {
  * @returns {{ sql: string, params: any[] }}
  */
 function topProducts(filters, limit = 5) {
-  const { clause, params } = buildWhereClause(filters);
+  const { clause, params, nextIndex } = buildWhereClause(filters);
 
   const sql = `
     SELECT
       product,
       category,
-      COALESCE(SUM(quantity * unit_price), 0) AS totalRevenue,
-      COALESCE(SUM(quantity), 0) AS unitsSold
+      COALESCE(SUM(quantity * unit_price), 0) AS "totalRevenue",
+      COALESCE(SUM(quantity), 0) AS "unitsSold"
     FROM transactions
     ${clause}
-    GROUP BY product
-    ORDER BY totalRevenue DESC
-    LIMIT ?
+    GROUP BY product, category
+    ORDER BY "totalRevenue" DESC
+    LIMIT $${nextIndex}
   `;
 
   params.push(limit);
@@ -243,32 +249,35 @@ function topProducts(filters, limit = 5) {
  * Returns a query for revenue breakdown by category, including each
  * category's percentage of total revenue.
  *
- * Uses a window function to compute the total across all categories in one pass.
+ * Uses a subquery to compute the total across all categories in one pass.
  * Percentage = (category_revenue / total_revenue) * 100
  *
  * @param {object} filters - { start, end, categories? }
  * @returns {{ sql: string, params: any[] }}
  */
 function revenueByCategory(filters) {
-  const { clause, params } = buildWhereClause(filters);
+  const { clause, params, nextIndex } = buildWhereClause(filters);
+
+  // Build a second WHERE clause for the subquery with continued param numbering
+  const { clause: subClause, params: subParams } = buildWhereClause(filters, nextIndex);
 
   const sql = `
     SELECT
       category,
-      COALESCE(SUM(quantity * unit_price), 0) AS categoryRevenue,
+      COALESCE(SUM(quantity * unit_price), 0) AS "categoryRevenue",
       ROUND(
         COALESCE(SUM(quantity * unit_price), 0) * 100.0 /
-        NULLIF((SELECT SUM(quantity * unit_price) FROM transactions ${clause}), 0),
+        NULLIF((SELECT SUM(quantity * unit_price) FROM transactions ${subClause}), 0),
         1
       ) AS percentage
     FROM transactions
     ${clause}
     GROUP BY category
-    ORDER BY categoryRevenue DESC
+    ORDER BY "categoryRevenue" DESC
   `;
 
-  // The subquery uses the same WHERE clause, so we duplicate params
-  return { sql, params: [...params, ...params] };
+  // The subquery uses continued param numbering so combine both param arrays
+  return { sql, params: [...params, ...subParams] };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -290,9 +299,9 @@ function customerPurchaseFrequency(filters) {
   const sql = `
     SELECT
       customer_id,
-      COUNT(*) AS purchaseCount,
-      COALESCE(SUM(quantity * unit_price), 0) AS totalSpend,
-      MAX(date) AS lastPurchaseDate
+      COUNT(*) AS "purchaseCount",
+      COALESCE(SUM(quantity * unit_price), 0) AS "totalSpend",
+      MAX(date) AS "lastPurchaseDate"
     FROM transactions
     ${clause}
     GROUP BY customer_id
@@ -309,18 +318,18 @@ function customerPurchaseFrequency(filters) {
  * @returns {{ sql: string, params: any[] }}
  */
 function topCustomers(filters, limit = 10) {
-  const { clause, params } = buildWhereClause(filters);
+  const { clause, params, nextIndex } = buildWhereClause(filters);
 
   const sql = `
     SELECT
       customer_id,
-      COALESCE(SUM(quantity * unit_price), 0) AS totalSpend,
+      COALESCE(SUM(quantity * unit_price), 0) AS "totalSpend",
       COUNT(*) AS purchases
     FROM transactions
     ${clause}
     GROUP BY customer_id
-    ORDER BY totalSpend DESC
-    LIMIT ?
+    ORDER BY "totalSpend" DESC
+    LIMIT $${nextIndex}
   `;
 
   params.push(limit);
@@ -331,6 +340,8 @@ function topCustomers(filters, limit = 10) {
  * Returns a query for customer recency — days since each customer's last purchase
  * relative to the end of the selected date range.
  *
+ * Uses PostgreSQL date arithmetic: (end_date::date - MAX(date)::date) gives integer days.
+ *
  * Used for customer segmentation:
  *   - Active: lastPurchase within 30 days of range end
  *   - At-Risk: lastPurchase more than 60 days before range end
@@ -339,21 +350,21 @@ function topCustomers(filters, limit = 10) {
  * @returns {{ sql: string, params: any[] }}
  */
 function customerRecency(filters) {
-  const { clause, params } = buildWhereClause(filters);
+  // The end date param comes first ($1), then the WHERE clause params follow
+  const { clause, params: whereParams, nextIndex } = buildWhereClause(filters, 2);
 
-  // julianday difference gives days between range end and customer's last purchase
   const sql = `
     SELECT
       customer_id,
-      MAX(date) AS lastPurchaseDate,
-      CAST(julianday(?) - julianday(MAX(date)) AS INTEGER) AS daysSinceLastPurchase
+      MAX(date) AS "lastPurchaseDate",
+      ($1::date - MAX(date)::date) AS "daysSinceLastPurchase"
     FROM transactions
     ${clause}
     GROUP BY customer_id
   `;
 
-  // The range end date is needed for the julianday calculation
-  return { sql, params: [filters.end, ...params] };
+  // The range end date is $1, then WHERE clause params start at $2
+  return { sql, params: [filters.end, ...whereParams] };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -421,7 +432,7 @@ function allCategories() {
  */
 function latestTransactionDate() {
   return {
-    sql: 'SELECT MAX(date) AS latestDate FROM transactions',
+    sql: 'SELECT MAX(date) AS "latestDate" FROM transactions',
     params: []
   };
 }

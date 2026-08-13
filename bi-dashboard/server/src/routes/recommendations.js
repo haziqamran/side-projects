@@ -53,7 +53,7 @@ function validateDateRange(start, end) {
  *
  * Returns plain-English business recommendations and insufficientData flag.
  */
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const { start, end, categories: categoriesParam } = req.query;
 
@@ -63,7 +63,7 @@ router.get('/', (req, res) => {
     }
 
     const categories = parseCategories(categoriesParam);
-    const result = recommendationService.getRecommendations(start, end, categories);
+    const result = await recommendationService.getRecommendations(start, end, categories);
 
     res.json(result);
   } catch (err) {

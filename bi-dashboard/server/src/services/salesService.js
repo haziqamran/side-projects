@@ -2,13 +2,13 @@
  * Sales Service
  *
  * Provides business logic for sales overview metrics and revenue trend data.
- * Uses the query builder from models/queries.js and better-sqlite3's synchronous API.
+ * Uses the query builder from models/queries.js and pg Pool's async API.
  *
  * Two main functions:
  *   - getOverview: computes current/previous period metrics with percentage changes
  *   - getTrend: returns time-series revenue data grouped by granularity
  */
-const { getDb } = require('../db');
+const { getPool } = require('../db');
 const {
   revenueAggregation,
   revenueTrend,
@@ -30,44 +30,47 @@ const {
  * @param {string} start - Start date inclusive (YYYY-MM-DD)
  * @param {string} end - End date inclusive (YYYY-MM-DD)
  * @param {string[]} [categories] - Optional category filter; empty/undefined = all
- * @returns {{ current: object, previous: object, change: object }}
- *
- * Validates: Requirements 4.1, 4.2, 4.3, 4.4, 4.5, 4.6
+ * @returns {Promise<{ current: object, previous: object, change: object }>}
  */
-function getOverview(start, end, categories) {
-  const db = getDb();
+async function getOverview(start, end, categories) {
+  const pool = getPool();
   const filters = { start, end, categories };
 
   // Get query objects for both current and previous periods
   const { current: currentQuery, previous: previousQuery } = periodOverPeriod(filters);
 
-  // Execute both queries (synchronous better-sqlite3 API)
-  const currentRow = db.prepare(currentQuery.sql).get(...currentQuery.params);
-  const previousRow = db.prepare(previousQuery.sql).get(...previousQuery.params);
+  // Execute both queries (async pg API)
+  const currentResult = await pool.query(currentQuery.sql, currentQuery.params);
+  const previousResult = await pool.query(previousQuery.sql, previousQuery.params);
+
+  const currentRow = currentResult.rows[0];
+  const previousRow = previousResult.rows[0];
+
+  // pg returns numeric columns as strings — parse them
+  const currentRevenue = parseFloat(currentRow.totalRevenue) || 0;
+  const currentOrders = parseInt(currentRow.totalOrders, 10) || 0;
+  const previousRevenue = parseFloat(previousRow.totalRevenue) || 0;
+  const previousOrders = parseInt(previousRow.totalOrders, 10) || 0;
 
   // Compute average order value, handling division by zero
-  const currentAvg = currentRow.totalOrders > 0
-    ? currentRow.totalRevenue / currentRow.totalOrders
-    : 0;
-  const previousAvg = previousRow.totalOrders > 0
-    ? previousRow.totalRevenue / previousRow.totalOrders
-    : 0;
+  const currentAvg = currentOrders > 0 ? currentRevenue / currentOrders : 0;
+  const previousAvg = previousOrders > 0 ? previousRevenue / previousOrders : 0;
 
   const current = {
-    totalRevenue: currentRow.totalRevenue,
-    totalOrders: currentRow.totalOrders,
+    totalRevenue: currentRevenue,
+    totalOrders: currentOrders,
     avgOrderValue: Math.round(currentAvg * 100) / 100
   };
 
   const previous = {
-    totalRevenue: previousRow.totalRevenue,
-    totalOrders: previousRow.totalOrders,
+    totalRevenue: previousRevenue,
+    totalOrders: previousOrders,
     avgOrderValue: Math.round(previousAvg * 100) / 100
   };
 
   // When previous period has no data (totalOrders = 0), set all changes to null
   let change;
-  if (previousRow.totalOrders === 0) {
+  if (previousOrders === 0) {
     change = {
       totalRevenue: null,
       totalOrders: null,
@@ -96,22 +99,20 @@ function getOverview(start, end, categories) {
  * @param {string} end - End date inclusive (YYYY-MM-DD)
  * @param {string[]} [categories] - Optional category filter; empty/undefined = all
  * @param {'daily'|'weekly'|'monthly'} [granularity='daily'] - Grouping level
- * @returns {{ data: Array<{ period: string, revenue: number }> }}
- *
- * Validates: Requirements 5.1, 5.2, 5.3, 5.4
+ * @returns {Promise<{ data: Array<{ period: string, revenue: number }> }>}
  */
-function getTrend(start, end, categories, granularity = 'daily') {
-  const db = getDb();
+async function getTrend(start, end, categories, granularity = 'daily') {
+  const pool = getPool();
   const filters = { start, end, categories };
 
   // Build and execute the trend query
   const { sql, params } = revenueTrend(filters, granularity);
-  const rows = db.prepare(sql).all(...params);
+  const result = await pool.query(sql, params);
 
   // Map rows to the expected response shape
-  const data = rows.map(row => ({
+  const data = result.rows.map(row => ({
     period: row.period,
-    revenue: row.revenue
+    revenue: parseFloat(row.revenue) || 0
   }));
 
   return { data };

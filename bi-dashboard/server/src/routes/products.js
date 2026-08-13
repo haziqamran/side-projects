@@ -57,7 +57,7 @@ function validateDateRange(start, end) {
  *
  * Returns product performance data with trend indicators and slow-mover flags.
  */
-router.get('/performance', (req, res) => {
+router.get('/performance', async (req, res) => {
   try {
     const { start, end, categories: categoriesParam, sort, order } = req.query;
 
@@ -67,7 +67,7 @@ router.get('/performance', (req, res) => {
     }
 
     const categories = parseCategories(categoriesParam);
-    const result = productService.getPerformance(start, end, categories);
+    const result = await productService.getPerformance(start, end, categories);
 
     // Apply sorting if sort param is provided
     if (sort && result.products) {
@@ -100,7 +100,7 @@ router.get('/performance', (req, res) => {
  *
  * Returns top N products by revenue.
  */
-router.get('/top', (req, res) => {
+router.get('/top', async (req, res) => {
   try {
     const { start, end, categories: categoriesParam, limit } = req.query;
 
@@ -111,7 +111,7 @@ router.get('/top', (req, res) => {
 
     const categories = parseCategories(categoriesParam);
     const resolvedLimit = limit ? parseInt(limit, 10) : 5;
-    const result = productService.getTop(start, end, categories, resolvedLimit);
+    const result = await productService.getTop(start, end, categories, resolvedLimit);
 
     res.json(result);
   } catch (err) {
@@ -130,7 +130,7 @@ router.get('/top', (req, res) => {
  *
  * Returns category revenue breakdown with percentages.
  */
-router.get('/categories', (req, res) => {
+router.get('/categories', async (req, res) => {
   try {
     const { start, end, categories: categoriesParam } = req.query;
 
@@ -140,7 +140,7 @@ router.get('/categories', (req, res) => {
     }
 
     const categories = parseCategories(categoriesParam);
-    const result = productService.getCategories(start, end, categories);
+    const result = await productService.getCategories(start, end, categories);
 
     res.json(result);
   } catch (err) {

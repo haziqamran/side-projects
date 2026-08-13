@@ -1,6 +1,9 @@
+require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const { initDb } = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -30,8 +33,17 @@ app.use('/api/customers', customersRouter);
 const recommendationsRouter = require('./routes/recommendations');
 app.use('/api/recommendations', recommendationsRouter);
 
-app.listen(PORT, () => {
-  console.log(`BI Dashboard API running on http://localhost:${PORT}`);
+// Initialize database and start server
+async function start() {
+  await initDb();
+  app.listen(PORT, () => {
+    console.log(`BI Dashboard API running on http://localhost:${PORT}`);
+  });
+}
+
+start().catch(err => {
+  console.error('Failed to start server:', err);
+  process.exit(1);
 });
 
 module.exports = app;

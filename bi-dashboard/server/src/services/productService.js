@@ -10,9 +10,9 @@
  *   - getTop: top N products by revenue
  *   - getCategories: category revenue breakdown with percentages
  *
- * Uses the query builder from models/queries.js and better-sqlite3's synchronous API.
+ * Uses the query builder from models/queries.js and pg Pool's async API.
  */
-const { getDb } = require('../db');
+const { getPool } = require('../db');
 const {
   productPerformance,
   topProducts,
@@ -25,79 +25,62 @@ const {
  * Returns all products with performance metrics, trend indicators, and
  * slow-moving flags for the selected date range.
  *
- * Algorithm:
- *   1. Query current period product performance (revenue + units sold)
- *   2. Query previous period product performance for trend comparison
- *   3. Compute trend for each product: "up" if change >5%, "down" if <-5%, "stable" otherwise
- *   4. Detect slow-moving products:
- *      a. Filter products with unitsSold > 0
- *      b. Compute average = total units / count of products with sales
- *      c. Threshold = Math.round(average * 0.3)
- *      d. Flag products where unitsSold < threshold
- *   5. Include products with zero sales (exist in DB but no sales in range)
- *
  * @param {string} start - Start date inclusive (YYYY-MM-DD)
  * @param {string} end - End date inclusive (YYYY-MM-DD)
  * @param {string[]} [categories] - Optional category filter; empty/undefined = all
- * @returns {{ products: Array, slowMovingThreshold: number|null, message: string|null }}
- *
- * Validates: Requirements 6.1, 6.2, 6.3, 6.4, 7.1, 7.3, 7.4, 7.5, 7.6, 8.1, 8.3, 8.4
+ * @returns {Promise<{ products: Array, slowMovingThreshold: number|null, message: string|null }>}
  */
-function getPerformance(start, end, categories) {
-  const db = getDb();
+async function getPerformance(start, end, categories) {
+  const pool = getPool();
   const filters = { start, end, categories };
 
   // Step 1: Get current period product performance
   const currentQuery = productPerformance(filters);
-  const currentProducts = db.prepare(currentQuery.sql).all(...currentQuery.params);
+  const currentResult = await pool.query(currentQuery.sql, currentQuery.params);
+  const currentProducts = currentResult.rows;
 
   // Step 2: Get previous period product performance for trend comparison
   const { prevStart, prevEnd } = calculatePreviousPeriod(start, end);
   const prevFilters = { start: prevStart, end: prevEnd, categories };
   const prevQuery = productPerformance(prevFilters);
-  const prevProducts = db.prepare(prevQuery.sql).all(...prevQuery.params);
+  const prevResult = await pool.query(prevQuery.sql, prevQuery.params);
+  const prevProducts = prevResult.rows;
 
   // Build a lookup map of previous period revenue by product name
   const prevRevenueMap = {};
   for (const row of prevProducts) {
-    prevRevenueMap[row.product] = row.totalRevenue;
+    prevRevenueMap[row.product] = parseFloat(row.totalRevenue) || 0;
   }
 
   // Step 3: Compute trend for each product
-  // "up" if change > 5%, "down" if change < -5%, "stable" otherwise
-  // If product has no previous data, trend = "stable"
   const productsWithTrend = currentProducts.map(product => {
+    const totalRevenue = parseFloat(product.totalRevenue) || 0;
+    const unitsSold = parseInt(product.unitsSold, 10) || 0;
     const prevRevenue = prevRevenueMap[product.product];
     let trend = 'stable';
 
     if (prevRevenue !== undefined && prevRevenue > 0) {
-      const change = computePercentageChange(product.totalRevenue, prevRevenue);
+      const change = computePercentageChange(totalRevenue, prevRevenue);
       if (change !== null) {
         if (change > 5) trend = 'up';
         else if (change < -5) trend = 'down';
       }
     }
-    // If no previous data (undefined) or previous revenue is 0, trend stays "stable"
 
-    return { ...product, trend };
+    return { product: product.product, category: product.category, totalRevenue, unitsSold, trend };
   });
 
   // Step 4: Slow-moving detection
-  // a. Get all products with unitsSold > 0
   const productsWithSales = productsWithTrend.filter(p => p.unitsSold > 0);
 
   let slowMovingThreshold = null;
 
   if (productsWithSales.length > 0) {
-    // b. Compute average units sold across products with at least 1 sale
     const totalUnits = productsWithSales.reduce((sum, p) => sum + p.unitsSold, 0);
     const average = totalUnits / productsWithSales.length;
-
-    // c. Threshold = Math.round(average * 0.3)
     slowMovingThreshold = Math.round(average * 0.3);
   }
 
-  // d. Flag products where unitsSold < threshold (and assign threshold info)
   const products = productsWithTrend.map(product => {
     const isSlowMoving = slowMovingThreshold !== null && product.unitsSold < slowMovingThreshold;
     return {
@@ -112,14 +95,12 @@ function getPerformance(start, end, categories) {
   });
 
   // Step 5: Include products with zero sales in the period
-  // These are products that exist in the DB but had no transactions in the date range.
-  // We need to find all distinct products (optionally filtered by category) that aren't
-  // already in our current results.
   const allProductsQuery = buildAllProductsQuery(categories);
-  const allProducts = db.prepare(allProductsQuery.sql).all(...allProductsQuery.params);
+  const allProductsResult = await pool.query(allProductsQuery.sql, allProductsQuery.params);
+  const allProductRows = allProductsResult.rows;
 
   const existingProductNames = new Set(products.map(p => p.product));
-  const zeroSaleProducts = allProducts
+  const zeroSaleProducts = allProductRows
     .filter(p => !existingProductNames.has(p.product))
     .map(p => ({
       product: p.product,
@@ -151,22 +132,20 @@ function getPerformance(start, end, categories) {
  * @param {string} end - End date inclusive (YYYY-MM-DD)
  * @param {string[]} [categories] - Optional category filter; empty/undefined = all
  * @param {number} [limit=5] - Number of top products to return
- * @returns {{ products: Array<{ product: string, category: string, totalRevenue: number, unitsSold: number }> }}
- *
- * Validates: Requirements 6.1, 6.4
+ * @returns {Promise<{ products: Array }>}
  */
-function getTop(start, end, categories, limit = 5) {
-  const db = getDb();
+async function getTop(start, end, categories, limit = 5) {
+  const pool = getPool();
   const filters = { start, end, categories };
 
   const { sql, params } = topProducts(filters, limit);
-  const rows = db.prepare(sql).all(...params);
+  const result = await pool.query(sql, params);
 
-  const products = rows.map(row => ({
+  const products = result.rows.map(row => ({
     product: row.product,
     category: row.category,
-    totalRevenue: row.totalRevenue,
-    unitsSold: row.unitsSold
+    totalRevenue: parseFloat(row.totalRevenue) || 0,
+    unitsSold: parseInt(row.unitsSold, 10) || 0
   }));
 
   return { products };
@@ -174,30 +153,26 @@ function getTop(start, end, categories, limit = 5) {
 
 /**
  * Returns category revenue breakdown with percentages for the selected date range.
- * Each category includes its total revenue and percentage of total revenue.
- * Percentages sum to 100% (±1% due to rounding).
  *
  * @param {string} start - Start date inclusive (YYYY-MM-DD)
  * @param {string} end - End date inclusive (YYYY-MM-DD)
  * @param {string[]} [categories] - Optional category filter; empty/undefined = all
- * @returns {{ categories: Array<{ category: string, revenue: number, percentage: number }> }}
- *
- * Validates: Requirements 6.2
+ * @returns {Promise<{ categories: Array }>}
  */
-function getCategories(start, end, categories) {
-  const db = getDb();
+async function getCategories(start, end, categories) {
+  const pool = getPool();
   const filters = { start, end, categories };
 
   const { sql, params } = revenueByCategory(filters);
-  const rows = db.prepare(sql).all(...params);
+  const result = await pool.query(sql, params);
 
-  const result = rows.map(row => ({
+  const categoryResults = result.rows.map(row => ({
     category: row.category,
-    revenue: row.categoryRevenue,
-    percentage: row.percentage
+    revenue: parseFloat(row.categoryRevenue) || 0,
+    percentage: parseFloat(row.percentage) || 0
   }));
 
-  return { categories: result };
+  return { categories: categoryResults };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -216,7 +191,7 @@ function buildAllProductsQuery(categories) {
   const params = [];
 
   if (categories && categories.length > 0) {
-    const placeholders = categories.map(() => '?').join(', ');
+    const placeholders = categories.map((_, i) => `$${i + 1}`).join(', ');
     sql += ` WHERE category IN (${placeholders})`;
     params.push(...categories);
   }

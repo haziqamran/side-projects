@@ -1,45 +1,56 @@
 /**
  * Database initialization and access layer.
- * Uses better-sqlite3 for synchronous, fast SQLite access.
+ * Uses pg (node-postgres) Pool for async PostgreSQL access via Neon.
  */
-const Database = require('better-sqlite3');
-const path = require('path');
+require('dotenv').config();
+const { Pool } = require('pg');
 
-const DB_PATH = path.join(__dirname, '..', 'data', 'dashboard.db');
+let pool;
 
-let db;
-
-function getDb() {
-  if (!db) {
-    db = new Database(DB_PATH);
-    db.pragma('journal_mode = WAL'); // Better concurrent read performance
-    initSchema();
+/**
+ * Returns the shared Pool instance, creating it on first call.
+ * @returns {Pool}
+ */
+function getPool() {
+  if (!pool) {
+    pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: { rejectUnauthorized: false }
+    });
   }
-  return db;
+  return pool;
 }
 
 /**
- * Creates the transactions table if it does not exist.
- * Schema matches the CSV columns: date, product, category, quantity, unit_price, customer_id, payment_method.
+ * Creates the transactions table and indexes if they do not exist.
+ * Must be called once at application startup.
  */
-function initSchema() {
-  db.exec(`
+async function initDb() {
+  const p = getPool();
+
+  await p.query(`
     CREATE TABLE IF NOT EXISTS transactions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      date TEXT NOT NULL,
+      id SERIAL PRIMARY KEY,
+      date DATE NOT NULL,
       product TEXT NOT NULL,
       category TEXT NOT NULL,
       quantity INTEGER NOT NULL,
-      unit_price REAL NOT NULL,
+      unit_price NUMERIC(10,2) NOT NULL,
       customer_id TEXT NOT NULL,
       payment_method TEXT NOT NULL,
-      created_at TEXT DEFAULT (datetime('now'))
-    );
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
 
-    CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
-    CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category);
-    CREATE INDEX IF NOT EXISTS idx_transactions_customer ON transactions(customer_id);
+  await p.query(`
+    CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date)
+  `);
+  await p.query(`
+    CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category)
+  `);
+  await p.query(`
+    CREATE INDEX IF NOT EXISTS idx_transactions_customer ON transactions(customer_id)
   `);
 }
 
-module.exports = { getDb };
+module.exports = { getPool, initDb };

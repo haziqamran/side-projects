@@ -3,12 +3,12 @@
  *
  * Provides business logic for customer insights: repeat rate, top customers,
  * and customer segmentation. Uses the query builder from models/queries.js
- * and better-sqlite3's synchronous API.
+ * and pg Pool's async API.
  *
  * Main function:
  *   - getInsights: returns repeat rate, top 10 customers, and segment breakdown
  */
-const { getDb } = require('../db');
+const { getPool } = require('../db');
 const {
   customerPurchaseFrequency,
   topCustomers,
@@ -23,32 +23,19 @@ const {
  *   - topCustomers: top 10 customers ranked by total spend
  *   - segments: active (≤30 days) and at-risk (>60 days) customer counts/percentages
  *
- * Segmentation logic (relative to range end date):
- *   - Active: daysSinceLastPurchase ≤ 30
- *   - At-Risk: daysSinceLastPurchase > 60
- *   - Unclassified: between 30 and 60 (excluded from display)
- *
- * Repeat rate logic:
- *   - Repeat customer = purchaseCount > 1 within the date range
- *   - Rate = (repeat_count / total_unique_customers) * 100, rounded to whole number
- *
- * If fewer than 10 customers exist, returns all available (no padding).
- *
  * @param {string} start - Start date inclusive (YYYY-MM-DD)
  * @param {string} end - End date inclusive (YYYY-MM-DD)
  * @param {string[]} [categories] - Optional category filter; empty/undefined = all
- * @returns {{ repeatRate: object, topCustomers: array, segments: object }}
- *
- * Validates: Requirements 9.1, 9.2, 9.3, 9.4, 9.5, 9.6
+ * @returns {Promise<{ repeatRate: object, topCustomers: array, segments: object }>}
  */
-function getInsights(start, end, categories) {
-  const db = getDb();
+async function getInsights(start, end, categories) {
+  const pool = getPool();
   const filters = { start, end, categories };
 
   // --- Repeat Rate ---
-  // Get purchase frequency per customer within the date range
   const frequencyQuery = customerPurchaseFrequency(filters);
-  const frequencyRows = db.prepare(frequencyQuery.sql).all(...frequencyQuery.params);
+  const frequencyResult = await pool.query(frequencyQuery.sql, frequencyQuery.params);
+  const frequencyRows = frequencyResult.rows;
 
   const totalCustomers = frequencyRows.length;
 
@@ -56,8 +43,7 @@ function getInsights(start, end, categories) {
   if (totalCustomers === 0) {
     repeatRate = { repeat: 0, oneTime: 0 };
   } else {
-    // A repeat customer has more than 1 purchase in the period
-    const repeatCount = frequencyRows.filter(row => row.purchaseCount > 1).length;
+    const repeatCount = frequencyRows.filter(row => parseInt(row.purchaseCount, 10) > 1).length;
     const oneTimeCount = totalCustomers - repeatCount;
 
     repeatRate = {
@@ -67,34 +53,33 @@ function getInsights(start, end, categories) {
   }
 
   // --- Top Customers ---
-  // Get top 10 customers by total spend (returns fewer if <10 exist)
   const topQuery = topCustomers(filters, 10);
-  const topRows = db.prepare(topQuery.sql).all(...topQuery.params);
+  const topResult = await pool.query(topQuery.sql, topQuery.params);
+  const topRows = topResult.rows;
 
   const topCustomersList = topRows.map(row => ({
     customerId: row.customer_id,
-    totalSpend: row.totalSpend,
-    purchases: row.purchases
+    totalSpend: parseFloat(row.totalSpend) || 0,
+    purchases: parseInt(row.purchases, 10) || 0
   }));
 
   // --- Customer Segmentation ---
-  // Get days since last purchase relative to range end for each customer
   const recencyQuery = customerRecency(filters);
-  const recencyRows = db.prepare(recencyQuery.sql).all(...recencyQuery.params);
+  const recencyResult = await pool.query(recencyQuery.sql, recencyQuery.params);
+  const recencyRows = recencyResult.rows;
 
   const totalUniqueCustomers = recencyRows.length;
 
-  // Classify customers into segments
   let activeCount = 0;
   let atRiskCount = 0;
 
   for (const row of recencyRows) {
-    if (row.daysSinceLastPurchase <= 30) {
+    const daysSince = parseInt(row.daysSinceLastPurchase, 10) || 0;
+    if (daysSince <= 30) {
       activeCount++;
-    } else if (row.daysSinceLastPurchase > 60) {
+    } else if (daysSince > 60) {
       atRiskCount++;
     }
-    // Customers between 30 and 60 days are unclassified (excluded from display)
   }
 
   let segments;
