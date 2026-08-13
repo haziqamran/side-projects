@@ -1,0 +1,23 @@
+{
+  "name": "bi-dashboard-server",
+  "version": "1.0.0",
+  "description": "Backend API for the Business Intelligence Dashboard",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "seed": "node src/seed.js",
+    "test": "jest"
+  },
+  "dependencies": {
+    "better-sqlite3": "9.6.0",
+    "cors": "2.8.5",
+    "express": "4.18.2",
+    "multer": "1.4.5-lts.1",
+    "csv-parse": "5.5.3"
+  },
+  "devDependencies": {
+    "jest": "29.7.0",
+    "nodemon": "3.0.3"
+  }
+}
