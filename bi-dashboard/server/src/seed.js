@@ -47,7 +47,14 @@ const categories = {
 
 const paymentMethods = ['Cash', 'Credit Card', 'Debit Card', 'E-Wallet'];
 
-// Generate 6 months of dates (roughly Jan–Jun 2026)
+/**
+ * Generates a random date (YYYY-MM-DD) between start and end dates (inclusive).
+ * Used to distribute seed transactions evenly across the 6-month range.
+ *
+ * @param {Date} start - Range start (inclusive)
+ * @param {Date} end - Range end (inclusive)
+ * @returns {string} Random date in YYYY-MM-DD format
+ */
 function randomDate(start, end) {
   const d = new Date(start.getTime() + Math.random() * (end.getTime() - start.getTime()));
   return d.toISOString().split('T')[0];
